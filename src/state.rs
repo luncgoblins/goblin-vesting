@@ -8,7 +8,7 @@ pub struct ShareholderInfo {
 	// last withdraw block height
 	pub last_withdraw_timestamp: Timestamp,
 	// shareholders weight over a common denominator
-	pub weight_nominator: u64,
+	pub weight: u64,
 }
 
 // ContractInfo holds global contract state
@@ -16,8 +16,6 @@ pub struct ShareholderInfo {
 pub struct ContractConfig {
 	// total length of vesting span in seconds
 	pub vesting_span: u64,
-	// weight denominator to handle the
-	pub weight_denominator: u64,
 	// token address
 	pub vesting_token_addr: Addr,
 }

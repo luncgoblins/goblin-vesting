@@ -7,6 +7,7 @@ use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 use crate::state::{SHAREHOLDERS, CONFIG, ContractConfig, ShareholderInfo};
 use cw20::{BalanceResponse, Cw20QueryMsg, Cw20ExecuteMsg};
+use cosmwasm_std::Order::Ascending;
 
 /*
 // version info for migration info
@@ -24,27 +25,20 @@ pub fn instantiate(
     
     let config = ContractConfig{
 		vesting_span: msg.vesting_span,
-		weight_denominator: msg.denominator,
 		vesting_token_addr: deps.api.addr_validate(
 			&msg.token
 		)?,
 	};
 	CONFIG.save(deps.storage, &config)?;
 	
-	let mut sum = 0u64;
 	for member in msg.shareholders.iter() {
 		let shareholder_info = ShareholderInfo{
 			last_withdraw_timestamp: env.block.time,
-			weight_nominator: member.nominator,
+			weight: member.weight,
 		};
 		let shareholder_addr = deps.api.addr_validate(&member.addr)?;
         SHAREHOLDERS.save(deps.storage, &shareholder_addr, &shareholder_info)?;
-        sum += member.nominator;
     }
-    
-    if sum != config.weight_denominator {
-		return Err(ContractError::InitializeError{});
-	}
 
 	Ok(Response::new())
     
@@ -75,10 +69,20 @@ pub fn execute_withdraw(
 	}
 	let config = CONFIG.load(deps.storage)?;
 	let mut member_info = SHAREHOLDERS.load(deps.storage, &info.sender)?;
+	
+	// TODO consider moving this into separate function
+	// and make save maths on it (save add with overflow error)
+	let weight_sum = SHAREHOLDERS
+		.range(deps.storage, None, None, Ascending)
+		.collect::<StdResult<Vec<_>>>()?
+		.iter()
+		.map(|item| item.1.weight)
+		.sum::<u64>();
+		
 	let balance = query_balance(&deps, env.clone(), info.clone())?;
 	let weight = (
-		Uint128::from(member_info.weight_nominator),
-		Uint128::from(config.weight_denominator)
+		Uint128::from(member_info.weight),
+		Uint128::from(weight_sum)
 	);
 	let time_diff = Uint128::from(
 		env.block.time
