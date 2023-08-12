@@ -21,6 +21,10 @@ pub enum ExecuteMsg {
 		addr: String,
 		weight: u64,
 	},
+	RemoveMember {
+		addr: String,
+		compensation: u64,
+	},
 }
 
 #[cw_serde]

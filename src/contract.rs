@@ -62,6 +62,10 @@ pub fn execute(
 			let in_addr = deps.api.addr_validate(&addr)?;
 			execute_add_member(deps, env, info, &in_addr, weight)
 		},
+		ExecuteMsg::RemoveMember { addr, compensation } => {
+			let in_addr = deps.api.addr_validate(&addr)?;
+			execute_remove_member(deps, env, info, &in_addr, compensation)
+		}
 	}
 }
 
@@ -91,6 +95,60 @@ pub fn execute_withdraw(
 	)?;
 	Ok(Response::new()
 		.add_message(send_request)
+	)
+}
+
+pub fn execute_remove_member(
+	deps: DepsMut,
+	env: Env,
+	info: MessageInfo,
+	addr: &Addr,
+	compensation: u64,
+) -> Result<Response, ContractError> {
+
+	// only admin can remove members
+	let config = CONFIG.load(deps.storage)?;
+	if config.admin != info.sender {
+		return Err(ContractError::Unauthorized{});
+	}
+	
+	// removed member must be current board member
+	if !SHAREHOLDERS.has(deps.storage, &info.sender) {
+		return Err(ContractError::UnexpectedInput{});
+	}
+	
+	let curr_timestamp = env.block.time;
+	
+	// force withdraw for all members
+	let msgs = SHAREHOLDERS
+		.range(deps.storage, None, None, Ascending)
+		.collect::<StdResult<Vec<_>>>()?
+		.iter()
+		.map(|item| -> Result<WasmMsg, ContractError>  {
+			let withdraw_amnt = calculate_withdraw_amnt(&deps, env.clone(), info.clone(), &item.0)?;
+			let message = get_withdraw_msg(&deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
+			SHAREHOLDERS.update(deps.storage, &item.0, |info: Option<ShareholderInfo>| -> Result<ShareholderInfo, ContractError> {
+				let mut ret = info.ok_or(ContractError::UnexpectedInput{})?;
+				ret.last_withdraw_timestamp = curr_timestamp;
+				Ok(ret)
+			});
+			Ok(message)
+		})
+		.collect::<Result<Vec<_>, ContractError>>()?;
+	
+	// remove member
+	SHAREHOLDERS.remove(deps.storage, addr);
+	
+	// compensation message
+	let compensation_msg = get_withdraw_msg(
+		&deps, env.clone(), info.clone(),
+		Uint128::from(compensation), addr
+	)?;
+	
+	// emit
+	Ok(Response::new()
+		.add_messages(msgs)
+		.add_message(compensation_msg)
 	)
 }
 
