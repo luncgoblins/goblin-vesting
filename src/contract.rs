@@ -28,6 +28,9 @@ pub fn instantiate(
 		vesting_token_addr: deps.api.addr_validate(
 			&msg.token
 		)?,
+		admin: deps.api.addr_validate(
+			&msg.admin
+		)?,
 	};
 	CONFIG.save(deps.storage, &config)?;
 	
@@ -54,7 +57,11 @@ pub fn execute(
 	match msg {
 		ExecuteMsg::Withdraw {} => {
 			execute_withdraw(deps, env, info)
-		}
+		},
+		ExecuteMsg::AddMember { addr, weight } => {
+			let in_addr = deps.api.addr_validate(&addr)?;
+			execute_add_member(deps, env, info, &in_addr, weight)
+		},
 	}
 }
 
@@ -67,11 +74,12 @@ pub fn execute_withdraw(
 	if !SHAREHOLDERS.has(deps.storage, &info.sender) {
 		return Err(ContractError::Unauthorized{});
 	}
-	
+
 	let addr = &info.sender;
 	let curr_time = env.block.time;
 	let mut member_info = SHAREHOLDERS.load(deps.storage, &addr)?;
 	let withdraw_amnt = calculate_withdraw_amnt(&deps, env.clone(), info.clone(), &addr)?;
+	
 	// update state
 	member_info.last_withdraw_timestamp = curr_time;
 	SHAREHOLDERS.save(deps.storage, &addr, &member_info)?;
@@ -79,10 +87,61 @@ pub fn execute_withdraw(
 	let send_request = get_withdraw_msg(
 		&deps, env.clone(), info.clone(),
 		withdraw_amnt,
-		info.sender
+		&info.sender
 	)?;
 	Ok(Response::new()
 		.add_message(send_request)
+	)
+}
+
+pub fn execute_add_member(
+	deps: DepsMut,
+	env: Env,
+	info: MessageInfo,
+	addr: &Addr,
+	weight: u64,
+) -> Result<Response, ContractError> {
+
+	// only admin can add members
+	let config = CONFIG.load(deps.storage)?;
+	if config.admin != info.sender {
+		return Err(ContractError::Unauthorized{});
+	}
+	
+	// new member not in list of current members
+	if SHAREHOLDERS.has(deps.storage, &info.sender) {
+		return Err(ContractError::UnexpectedInput{});
+	}
+	
+	let curr_timestamp = env.block.time;
+	
+	// force withdraw for all members
+	let msgs = SHAREHOLDERS
+		.range(deps.storage, None, None, Ascending)
+		.collect::<StdResult<Vec<_>>>()?
+		.iter()
+		.map(|item| -> Result<WasmMsg, ContractError>  {
+			let withdraw_amnt = calculate_withdraw_amnt(&deps, env.clone(), info.clone(), &item.0)?;
+			let message = get_withdraw_msg(&deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
+			SHAREHOLDERS.update(deps.storage, &item.0, |info: Option<ShareholderInfo>| -> Result<ShareholderInfo, ContractError> {
+				let mut ret = info.ok_or(ContractError::UnexpectedInput{})?;
+				ret.last_withdraw_timestamp = curr_timestamp;
+				Ok(ret)
+			});
+			Ok(message)
+		})
+		.collect::<Result<Vec<_>, ContractError>>()?;
+	
+	// add new member
+	let new_info = ShareholderInfo {
+		last_withdraw_timestamp: curr_timestamp,
+		weight: weight,
+	};
+	SHAREHOLDERS.save(deps.storage, addr, &new_info)?;
+	
+	// emit
+	Ok(Response::new()
+		.add_messages(msgs)
 	)
 }
 
@@ -125,18 +184,17 @@ pub fn calculate_withdraw_amnt(
 	
 }
 
-
 pub fn get_withdraw_msg(
 	deps: &DepsMut,
 	_env: Env,
 	_info: MessageInfo,
 	amnt: Uint128,
-	dst: Addr,
+	dst: &Addr,
 ) -> StdResult<WasmMsg> {
 	
 	let config = CONFIG.load(deps.storage)?;
 	let send_msg = Cw20ExecuteMsg::Transfer {
-		recipient: dst.into_string(),
+		recipient: dst.clone().into_string(),
 		amount: amnt,
 	};
 	let wasm_msg = WasmMsg::Execute {

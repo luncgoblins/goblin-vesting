@@ -18,6 +18,7 @@ pub struct ContractConfig {
 	pub vesting_span: u64,
 	// token address
 	pub vesting_token_addr: Addr,
+	pub admin: Addr,
 }
 
 pub const SHAREHOLDERS: Map<&Addr, ShareholderInfo> = Map::new("shareholders");
