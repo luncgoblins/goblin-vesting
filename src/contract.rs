@@ -67,8 +67,34 @@ pub fn execute_withdraw(
 	if !SHAREHOLDERS.has(deps.storage, &info.sender) {
 		return Err(ContractError::Unauthorized{});
 	}
+	
+	let addr = &info.sender;
+	let curr_time = env.block.time;
+	let mut member_info = SHAREHOLDERS.load(deps.storage, &addr)?;
+	let withdraw_amnt = calculate_withdraw_amnt(&deps, env.clone(), info.clone(), &addr)?;
+	// update state
+	member_info.last_withdraw_timestamp = curr_time;
+	SHAREHOLDERS.save(deps.storage, &addr, &member_info)?;
+	
+	let send_request = get_withdraw_msg(
+		&deps, env.clone(), info.clone(),
+		withdraw_amnt,
+		info.sender
+	)?;
+	Ok(Response::new()
+		.add_message(send_request)
+	)
+}
+
+pub fn calculate_withdraw_amnt(
+	deps: &DepsMut,
+	env: Env,
+	info: MessageInfo,
+	addr: &Addr,
+) -> Result<Uint128, ContractError> {
+	
 	let config = CONFIG.load(deps.storage)?;
-	let mut member_info = SHAREHOLDERS.load(deps.storage, &info.sender)?;
+	let member_info = SHAREHOLDERS.load(deps.storage, &addr)?;
 	
 	// TODO consider moving this into separate function
 	// and make save maths on it (save add with overflow error)
@@ -92,25 +118,15 @@ pub fn execute_withdraw(
 		time_diff,
 		Uint128::from(config.vesting_span),
 	);
-	let eligible_withdraw_amnt = balance
+	Ok(balance
 		.checked_mul_floor(time_weight).unwrap_or(Uint128::from(0u64))
-		.checked_mul_floor(weight).unwrap_or(Uint128::from(0u64));
-	
-	// update state
-	member_info.last_withdraw_timestamp = env.block.time;
-	SHAREHOLDERS.save(deps.storage, &info.sender, &member_info)?;
-	
-	let send_request = send_tokens(
-		&deps, env.clone(), info.clone(),
-		eligible_withdraw_amnt,
-		info.sender
-	)?;
-	Ok(Response::new()
-		.add_message(send_request)
+		.checked_mul_floor(weight).unwrap_or(Uint128::from(0u64))
 	)
+	
 }
 
-pub fn send_tokens(
+
+pub fn get_withdraw_msg(
 	deps: &DepsMut,
 	_env: Env,
 	_info: MessageInfo,
