@@ -25,6 +25,9 @@ pub enum ExecuteMsg {
 		addr: String,
 		compensation: u64,
 	},
+	KickOff {
+		date: u64,
+	},
 }
 
 #[cw_serde]

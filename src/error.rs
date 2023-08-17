@@ -12,7 +12,16 @@ pub enum ContractError {
     #[error("InitializeFailed")]
     InitializeError {},
     
-     #[error("UnexpectedInput")]
+    #[error("UnexpectedInput")]
     UnexpectedInput {},
+    
+    #[error("ExpiredContract")]
+    ExpiredContract{},
+    
+    #[error("InactiveContract")]
+    InactiveContract{},
+    
+    #[error("ActiveContract")]
+    ActiveContract{},
 
 }

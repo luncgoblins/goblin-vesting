@@ -1,6 +1,6 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, QueryRequest, to_binary, WasmQuery, Uint128, WasmMsg};
+use cosmwasm_std::{Timestamp,Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, QueryRequest, to_binary, WasmQuery, Uint128, WasmMsg};
 // use cw2::set_contract_version;
 
 use crate::error::ContractError;
@@ -31,6 +31,7 @@ pub fn instantiate(
 		admin: deps.api.addr_validate(
 			&msg.admin
 		)?,
+		schedule_start: Timestamp::from_seconds(0u64),
 	};
 	CONFIG.save(deps.storage, &config)?;
 	
@@ -54,6 +55,7 @@ pub fn execute(
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
+	
 	match msg {
 		ExecuteMsg::Withdraw {} => {
 			execute_withdraw(deps, env, info)
@@ -66,7 +68,40 @@ pub fn execute(
 			let in_addr = deps.api.addr_validate(&addr)?;
 			execute_remove_member(deps, env, info, &in_addr, compensation)
 		}
+		ExecuteMsg::KickOff { date } => {
+			execute_kickoff(deps, env, info, Timestamp::from_seconds(date))
+		}
 	}
+}
+
+pub fn is_expired(
+	start_timestamp: Timestamp,
+	current_timestamp: Timestamp,
+	duration: Timestamp,
+) -> bool {
+
+	current_timestamp > start_timestamp.plus_seconds(duration.seconds())
+
+}
+
+pub fn is_inactive(
+	start_timestamp: Timestamp,
+	current_timestamp: Timestamp,
+	duration: Timestamp,
+) -> bool {
+
+	let a = !is_kickstarted(start_timestamp);
+	let b = is_kickstarted(start_timestamp) && current_timestamp < start_timestamp.plus_seconds(duration.seconds());
+	a || b
+
+}
+
+pub fn is_kickstarted(
+	start_timestamp: Timestamp,
+) -> bool {
+
+	start_timestamp > Timestamp::from_seconds(0u64)
+
 }
 
 pub fn execute_withdraw(
@@ -77,6 +112,23 @@ pub fn execute_withdraw(
 
 	if !SHAREHOLDERS.has(deps.storage, &info.sender) {
 		return Err(ContractError::Unauthorized{});
+	}
+	
+	let config = CONFIG.load(deps.storage)?;
+	if is_expired(
+		config.schedule_start,
+		env.block.time,
+		Timestamp::from_seconds(config.vesting_span),
+	) {
+		return Err(ContractError::ExpiredContract{});
+	}
+	
+	if is_inactive(
+		config.schedule_start,
+		env.block.time,
+		Timestamp::from_seconds(config.vesting_span),
+	) {
+		return Err(ContractError::InactiveContract{});
 	}
 
 	let addr = &info.sender;
@@ -117,6 +169,22 @@ pub fn execute_remove_member(
 		return Err(ContractError::UnexpectedInput{});
 	}
 	
+	if is_expired(
+		config.schedule_start,
+		env.block.time,
+		Timestamp::from_seconds(config.vesting_span),
+	) {
+		return Err(ContractError::ExpiredContract{});
+	}
+	
+	if is_inactive(
+		config.schedule_start,
+		env.block.time,
+		Timestamp::from_seconds(config.vesting_span),
+	) {
+		return Err(ContractError::InactiveContract{});
+	}
+	
 	let curr_timestamp = env.block.time;
 	
 	// force withdraw for all members
@@ -131,7 +199,7 @@ pub fn execute_remove_member(
 				let mut ret = info.ok_or(ContractError::UnexpectedInput{})?;
 				ret.last_withdraw_timestamp = curr_timestamp;
 				Ok(ret)
-			});
+			})?;
 			Ok(message)
 		})
 		.collect::<Result<Vec<_>, ContractError>>()?;
@@ -171,6 +239,22 @@ pub fn execute_add_member(
 		return Err(ContractError::UnexpectedInput{});
 	}
 	
+	if is_expired(
+		config.schedule_start,
+		env.block.time,
+		Timestamp::from_seconds(config.vesting_span),
+	) {
+		return Err(ContractError::ExpiredContract{});
+	}
+	
+	if is_inactive(
+		config.schedule_start,
+		env.block.time,
+		Timestamp::from_seconds(config.vesting_span),
+	) {
+		return Err(ContractError::InactiveContract{});
+	}
+	
 	let curr_timestamp = env.block.time;
 	
 	// force withdraw for all members
@@ -185,7 +269,7 @@ pub fn execute_add_member(
 				let mut ret = info.ok_or(ContractError::UnexpectedInput{})?;
 				ret.last_withdraw_timestamp = curr_timestamp;
 				Ok(ret)
-			});
+			})?;
 			Ok(message)
 		})
 		.collect::<Result<Vec<_>, ContractError>>()?;
@@ -201,6 +285,30 @@ pub fn execute_add_member(
 	Ok(Response::new()
 		.add_messages(msgs)
 	)
+}
+
+pub fn execute_kickoff(
+	deps: DepsMut,
+	_env: Env,
+	info: MessageInfo,
+	date: Timestamp,
+) -> Result<Response, ContractError> {
+	
+	// only admin can kickoff
+	let mut config = CONFIG.load(deps.storage)?;
+	if config.admin != info.sender {
+		return Err(ContractError::Unauthorized{});
+	}
+	
+	if is_kickstarted(config.schedule_start.clone()) {
+		return Err(ContractError::ActiveContract{});
+	}
+	
+	config.schedule_start = date;
+	CONFIG.save(deps.storage, &config)?;
+	
+	Ok(Response::new())
+	
 }
 
 pub fn calculate_withdraw_amnt(
