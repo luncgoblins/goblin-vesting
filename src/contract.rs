@@ -114,15 +114,6 @@ pub fn execute_withdraw(
 		return Err(ContractError::Unauthorized{});
 	}
 	
-	let config = CONFIG.load(deps.storage)?;
-	if is_expired(
-		config.schedule_start,
-		env.block.time,
-		Timestamp::from_seconds(config.vesting_span),
-	) {
-		return Err(ContractError::ExpiredContract{});
-	}
-	
 	if is_inactive(
 		config.schedule_start,
 		env.block.time,
