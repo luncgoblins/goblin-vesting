@@ -1,6 +1,6 @@
 use cw_storage_plus::{Map, Item};
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Timestamp, Addr};
+use cosmwasm_std::{Timestamp, Addr, Uint128};
 
 //ShareholderInfo holds shareholder info and state
 #[cw_serde]
@@ -18,6 +18,7 @@ pub struct ContractConfig {
 	pub vesting_span: u64,
 	// token address
 	pub vesting_token_addr: Addr,
+	pub vesting_token_balance: Uint128,
 	pub admin: Addr,
 	pub schedule_start: Timestamp,
 }

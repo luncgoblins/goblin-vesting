@@ -28,6 +28,7 @@ pub fn instantiate(
 		vesting_token_addr: deps.api.addr_validate(
 			&msg.token
 		)?,
+		vesting_token_balance: Uint128::from(0u64),
 		admin: deps.api.addr_validate(
 			&msg.admin
 		)?,
@@ -67,10 +68,10 @@ pub fn execute(
 		ExecuteMsg::RemoveMember { addr, compensation } => {
 			let in_addr = deps.api.addr_validate(&addr)?;
 			execute_remove_member(deps, env, info, &in_addr, compensation)
-		}
+		},
 		ExecuteMsg::KickOff { date } => {
 			execute_kickoff(deps, env, info, Timestamp::from_seconds(date))
-		}
+		},
 	}
 }
 
@@ -104,6 +105,8 @@ pub fn is_kickstarted(
 
 }
 
+
+
 pub fn execute_withdraw(
 	deps: DepsMut,
 	env: Env,
@@ -113,7 +116,8 @@ pub fn execute_withdraw(
 	if !SHAREHOLDERS.has(deps.storage, &info.sender) {
 		return Err(ContractError::Unauthorized{});
 	}
-	
+
+	let config = CONFIG.load(deps.storage)?;
 	if is_inactive(
 		config.schedule_start,
 		env.block.time,
@@ -167,34 +171,34 @@ pub fn execute_remove_member(
 	) {
 		return Err(ContractError::ExpiredContract{});
 	}
+
+	let curr_timestamp = env.block.time;
 	
-	if is_inactive(
+	// force withdraw for all members
+	// (but only if linear payout started)
+	let mut msgs = vec![];
+	if !is_inactive(
 		config.schedule_start,
 		env.block.time,
 		Timestamp::from_seconds(config.vesting_span),
 	) {
-		return Err(ContractError::InactiveContract{});
+		msgs = SHAREHOLDERS
+			.range(deps.storage, None, None, Ascending)
+			.collect::<StdResult<Vec<_>>>()?
+			.iter()
+			.map(|item| -> Result<WasmMsg, ContractError>  {
+				let withdraw_amnt = calculate_withdraw_amnt(&deps, env.clone(), info.clone(), &item.0)?;
+				let message = get_withdraw_msg(&deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
+				SHAREHOLDERS.update(deps.storage, &item.0, |info: Option<ShareholderInfo>| -> Result<ShareholderInfo, ContractError> {
+					let mut ret = info.ok_or(ContractError::UnexpectedInput{})?;
+					ret.last_withdraw_timestamp = curr_timestamp;
+					Ok(ret)
+				})?;
+				Ok(message)
+			})
+			.collect::<Result<Vec<_>, ContractError>>()?;
 	}
-	
-	let curr_timestamp = env.block.time;
-	
-	// force withdraw for all members
-	let msgs = SHAREHOLDERS
-		.range(deps.storage, None, None, Ascending)
-		.collect::<StdResult<Vec<_>>>()?
-		.iter()
-		.map(|item| -> Result<WasmMsg, ContractError>  {
-			let withdraw_amnt = calculate_withdraw_amnt(&deps, env.clone(), info.clone(), &item.0)?;
-			let message = get_withdraw_msg(&deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
-			SHAREHOLDERS.update(deps.storage, &item.0, |info: Option<ShareholderInfo>| -> Result<ShareholderInfo, ContractError> {
-				let mut ret = info.ok_or(ContractError::UnexpectedInput{})?;
-				ret.last_withdraw_timestamp = curr_timestamp;
-				Ok(ret)
-			})?;
-			Ok(message)
-		})
-		.collect::<Result<Vec<_>, ContractError>>()?;
-	
+
 	// remove member
 	SHAREHOLDERS.remove(deps.storage, addr);
 	
@@ -238,32 +242,32 @@ pub fn execute_add_member(
 		return Err(ContractError::ExpiredContract{});
 	}
 	
-	if is_inactive(
+	let curr_timestamp = env.block.time;
+	
+	// force withdraw for all members
+	// (but only if linear payout started)
+	let mut msgs = vec![];
+	if !is_inactive(
 		config.schedule_start,
 		env.block.time,
 		Timestamp::from_seconds(config.vesting_span),
 	) {
-		return Err(ContractError::InactiveContract{});
+		msgs = SHAREHOLDERS
+			.range(deps.storage, None, None, Ascending)
+			.collect::<StdResult<Vec<_>>>()?
+			.iter()
+			.map(|item| -> Result<WasmMsg, ContractError>  {
+				let withdraw_amnt = calculate_withdraw_amnt(&deps, env.clone(), info.clone(), &item.0)?;
+				let message = get_withdraw_msg(&deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
+				SHAREHOLDERS.update(deps.storage, &item.0, |info: Option<ShareholderInfo>| -> Result<ShareholderInfo, ContractError> {
+					let mut ret = info.ok_or(ContractError::UnexpectedInput{})?;
+					ret.last_withdraw_timestamp = curr_timestamp;
+					Ok(ret)
+				})?;
+				Ok(message)
+			})
+			.collect::<Result<Vec<_>, ContractError>>()?;
 	}
-	
-	let curr_timestamp = env.block.time;
-	
-	// force withdraw for all members
-	let msgs = SHAREHOLDERS
-		.range(deps.storage, None, None, Ascending)
-		.collect::<StdResult<Vec<_>>>()?
-		.iter()
-		.map(|item| -> Result<WasmMsg, ContractError>  {
-			let withdraw_amnt = calculate_withdraw_amnt(&deps, env.clone(), info.clone(), &item.0)?;
-			let message = get_withdraw_msg(&deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
-			SHAREHOLDERS.update(deps.storage, &item.0, |info: Option<ShareholderInfo>| -> Result<ShareholderInfo, ContractError> {
-				let mut ret = info.ok_or(ContractError::UnexpectedInput{})?;
-				ret.last_withdraw_timestamp = curr_timestamp;
-				Ok(ret)
-			})?;
-			Ok(message)
-		})
-		.collect::<Result<Vec<_>, ContractError>>()?;
 	
 	// add new member
 	let new_info = ShareholderInfo {
