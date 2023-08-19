@@ -8,7 +8,7 @@ pub struct InitialShareholder {
 
 #[cw_serde]
 pub struct InstantiateMsg {
-	pub vesting_span: u64,
+	pub vesting_period: u64,
 	pub token: String,
 	pub shareholders: Vec<InitialShareholder>,
 	pub admin: String,

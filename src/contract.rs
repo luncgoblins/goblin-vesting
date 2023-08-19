@@ -26,7 +26,7 @@ pub fn instantiate(
 ) -> Result<Response, ContractError> {
     
     let config = ContractConfig{
-		vesting_span: msg.vesting_span,
+		vesting_period: msg.vesting_period,
 		vesting_token_addr: deps.api.addr_validate(
 			&msg.token
 		)?,
@@ -123,7 +123,7 @@ pub fn execute_withdraw(
 	if is_inactive(
 		config.schedule_start,
 		env.block.time,
-		Timestamp::from_seconds(config.vesting_span),
+		Timestamp::from_seconds(config.vesting_period),
 	) {
 		return Err(ContractError::InactiveContract{});
 	}
@@ -169,7 +169,7 @@ pub fn execute_remove_member(
 	if is_expired(
 		config.schedule_start,
 		env.block.time,
-		Timestamp::from_seconds(config.vesting_span),
+		Timestamp::from_seconds(config.vesting_period),
 	) {
 		return Err(ContractError::ExpiredContract{});
 	}
@@ -182,7 +182,7 @@ pub fn execute_remove_member(
 	if !is_inactive(
 		config.schedule_start,
 		env.block.time,
-		Timestamp::from_seconds(config.vesting_span),
+		Timestamp::from_seconds(config.vesting_period),
 	) {
 		msgs = SHAREHOLDERS
 			.range(deps.storage, None, None, Ascending)
@@ -239,7 +239,7 @@ pub fn execute_add_member(
 	if is_expired(
 		config.schedule_start,
 		env.block.time,
-		Timestamp::from_seconds(config.vesting_span),
+		Timestamp::from_seconds(config.vesting_period),
 	) {
 		return Err(ContractError::ExpiredContract{});
 	}
@@ -252,7 +252,7 @@ pub fn execute_add_member(
 	if !is_inactive(
 		config.schedule_start,
 		env.block.time,
-		Timestamp::from_seconds(config.vesting_span),
+		Timestamp::from_seconds(config.vesting_period),
 	) {
 		msgs = SHAREHOLDERS
 			.range(deps.storage, None, None, Ascending)
@@ -338,7 +338,7 @@ pub fn calculate_withdraw_amnt(
 	);
 	let time_weight = (
 		time_diff,
-		Uint128::from(config.vesting_span),
+		Uint128::from(config.vesting_period),
 	);
 	Ok(balance
 		.checked_mul_floor(time_weight).unwrap_or(Uint128::from(0u64))

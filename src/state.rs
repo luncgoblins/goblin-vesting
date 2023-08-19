@@ -15,7 +15,7 @@ pub struct ShareholderInfo {
 #[cw_serde]
 pub struct ContractConfig {
 	// total length of vesting span in seconds
-	pub vesting_span: u64,
+	pub vesting_period: u64,
 	// token address
 	pub vesting_token_addr: Addr,
 	pub vesting_token_balance: Uint128,
