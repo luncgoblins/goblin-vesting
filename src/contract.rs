@@ -1,10 +1,12 @@
 #[cfg(not(feature = "library"))]
+
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{Timestamp,Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, QueryRequest, to_binary, WasmQuery, Uint128, WasmMsg};
 // use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg};
+use crate::query::{QueryMsg};
 use crate::state::{SHAREHOLDERS, CONFIG, ContractConfig, ShareholderInfo};
 use cw20::{BalanceResponse, Cw20QueryMsg, Cw20ExecuteMsg};
 use cosmwasm_std::Order::Ascending;
@@ -388,8 +390,26 @@ pub fn query_balance(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(_deps: Deps, _env: Env, _msg: QueryMsg) -> StdResult<Binary> {
-    unimplemented!()
+pub fn query(
+	deps: Deps,
+	env: Env,
+	msg: QueryMsg) -> StdResult<Binary> {
+    
+    match msg {
+		QueryMsg::Config {} => {
+			Ok(to_binary(&query_config(deps, env)?)?)
+		},
+	}
+    
+}
+
+pub fn query_config(
+	deps: Deps,
+	_env: Env,
+) -> StdResult<ContractConfig> {
+
+	Ok(CONFIG.load(deps.storage)?)
+
 }
 
 #[cfg(test)]

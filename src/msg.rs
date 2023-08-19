@@ -1,4 +1,4 @@
-use cosmwasm_schema::{cw_serde, QueryResponses};
+use cosmwasm_schema::{cw_serde};
 
 #[cw_serde]
 pub struct InitialShareholder {
@@ -29,7 +29,3 @@ pub enum ExecuteMsg {
 		date: u64,
 	},
 }
-
-#[cw_serde]
-#[derive(QueryResponses)]
-pub enum QueryMsg {}
