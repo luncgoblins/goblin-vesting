@@ -9,6 +9,8 @@ This is an open source vesting contract for CW20 tokens on Terra Classic. It has
 - Adjustable board
 - Leaving board members can receive severence pay
 
+This contract is used in the LUNC Goblins project to lock-up LUNC Goblins Token
+
 ## Build
 
 Follow this guide (https://book.cosmwasm.com/setting-up-env.html) to set up your build environment. If you have not already, ou may also want to install `run-script` extension for cargo:
