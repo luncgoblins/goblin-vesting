@@ -1,7 +1,13 @@
 #[cfg(not(feature = "library"))]
 
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{Timestamp,Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, QueryRequest, to_binary, WasmQuery, Uint128, WasmMsg};
+use cosmwasm_std::{
+	StdError,
+	OverflowError, Uint64, Timestamp,
+	Addr, Binary, Deps, DepsMut, Env, MessageInfo,
+	Response, StdResult, QueryRequest, to_binary,
+	WasmQuery, Uint128, WasmMsg
+};
 // use cw2::set_contract_version;
 
 use crate::error::ContractError;
@@ -308,6 +314,20 @@ pub fn execute_kickoff(
 	
 }
 
+pub fn calculate_weight_sum (
+	deps: &DepsMut
+) -> StdResult<Uint64>{
+	
+	Ok(
+		SHAREHOLDERS
+			.range(deps.storage, None, None, Ascending)
+			.fold(Ok(Uint64::zero()), |acc: StdResult<Uint64>, item| {
+				Ok(acc?.checked_add(Uint64::from(item?.1.weight))?)
+			})?
+	)
+	
+}
+
 pub fn calculate_withdraw_amnt(
 	deps: &DepsMut,
 	env: Env,
@@ -317,15 +337,7 @@ pub fn calculate_withdraw_amnt(
 	
 	let config = CONFIG.load(deps.storage)?;
 	let member_info = SHAREHOLDERS.load(deps.storage, &addr)?;
-	
-	// TODO consider moving this into separate function
-	// and make save maths on it (save add with overflow error)
-	let weight_sum = SHAREHOLDERS
-		.range(deps.storage, None, None, Ascending)
-		.collect::<StdResult<Vec<_>>>()?
-		.iter()
-		.map(|item| item.1.weight)
-		.sum::<u64>();
+	let weight_sum = calculate_weight_sum(deps)?;
 		
 	let balance = query_balance(&deps, env.clone(), info.clone())?;
 	let weight = (
