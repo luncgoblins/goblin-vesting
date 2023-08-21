@@ -31,7 +31,7 @@ You'll find the compiled artifact under `artifacts/goblin_vesting.wasm`
 After Instantiation the Contract is completely inactive. The admin can send the `KickOff` message to put the contract into a dormant state. In this stage the contract starts the lock-up period where no funds of the CW20 balance are paid out to the board members. The `KickOff` message contains the UNIX timestamp of when the linear payout schedule should start.
 
 ```
-KickOff {
+{
   "date": "<u64>",
 }
 ```
