@@ -66,7 +66,7 @@ For instantiation send a `MsgInstantiateContract` to the blockchain with the fol
 
 ## Contract Life-Cycle
 
-After Instantiation the Contract is completely inactive. The admin can send the `KickOff` message to put the contract into a dormant state. In this stage the contract starts the lock-up period where no funds of the CW20 balance are paid out to the board members. The `KickOff` message contains the UNIX timestamp of when the linear payout schedule should start.
+After Instantiation the Contract is completely inactive. The admin can send the `KickOff` message to put the contract into a dormant state. In this stage the contract starts the lock-up period where no funds of the CW20 balance are paid out to the board members.
 
 ```
 {
@@ -79,6 +79,10 @@ When the contract reaches that date it automatically changes into the active sta
 ![life_cycle](https://github.com/luncgoblins/goblin-vesting/assets/29800180/70746115-06c6-449d-a73b-afd07453fbc1)
 
 After contract expiry most of the functions are deactivated. Members may be still eligibile to withdraw the remaining unlock that they have accrued (but not withdrawn) during the active period
+
+## Funding the Contract
+
+You can fund the contract by directly using the standard CW20 `Trasfer` message to send the desired amount of CW20 tokens to the contract. Please, be aware that sending a token to the conctract will lock up the funds and realease it according to the vesting schedule. If you send tokens there that are unknown to the contract they are lost (locked up in the contract forever if you don't have admin access to the code). The same applies for chain native tokens.
 
 ## Supported Queries
 
