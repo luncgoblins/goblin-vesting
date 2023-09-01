@@ -12,6 +12,7 @@ pub struct InstantiateMsg {
 	pub token: String,
 	pub shareholders: Vec<InitialShareholder>,
 	pub admin: String,
+	pub force_withdraw_enabled: Option<bool>,
 }
 
 #[cw_serde]
@@ -28,4 +29,5 @@ pub enum ExecuteMsg {
 	KickOff {
 		date: u64,
 	},
+	ForceWithdraw {},
 }

@@ -30,7 +30,7 @@ pub fn instantiate(
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    
+
     let config = ContractConfig{
 		vesting_period: msg.vesting_period,
 		vesting_token_addr: deps.api.addr_validate(
@@ -41,6 +41,7 @@ pub fn instantiate(
 			&msg.admin
 		)?,
 		schedule_start: Timestamp::from_seconds(0u64),
+		force_withdraw_enabled: msg.force_withdraw_enabled.unwrap_or(false),
 	};
 	CONFIG.save(deps.storage, &config)?;
 	
@@ -79,6 +80,9 @@ pub fn execute(
 		},
 		ExecuteMsg::KickOff { date } => {
 			execute_kickoff(deps, env, info, Timestamp::from_seconds(date))
+		},
+		ExecuteMsg::ForceWithdraw {} => {
+			execute_force_withdraw(deps, env, info)
 		},
 	}
 }
@@ -160,7 +164,7 @@ pub fn execute_remove_member(
 	if config.admin != info.sender {
 		return Err(ContractError::Unauthorized{});
 	}
-	
+
 	// removed member must be current board member
 	if !SHAREHOLDERS.has(deps.storage, &info.sender) {
 		return Err(ContractError::UnexpectedInput{});
@@ -278,6 +282,42 @@ pub fn execute_kickoff(
 	
 	Ok(Response::new())
 	
+}
+
+pub fn execute_force_withdraw(
+	deps: DepsMut,
+	env: Env,
+	info: MessageInfo,
+) -> Result<Response, ContractError> {
+
+	// only admin can force withdraw
+	let mut config = CONFIG.load(deps.storage)?;
+	if config.admin != info.sender {
+		return Err(ContractError::Unauthorized{});
+	}
+
+	// only from enabled contracts can be
+	// force withdrewn
+	if !config.force_withdraw_enabled {
+		return Err(ContractError::Unauthorized{});
+	}
+
+	// force withdraw but only
+	// within linear schedule
+	let mut msgs = vec![];
+	if !is_inactive(
+		config.schedule_start,
+		env.block.time,
+		Timestamp::from_seconds(config.vesting_period),
+	) {
+		msgs = get_all_withdraw_msgs(deps.as_ref(), env.clone(), info.clone())?;
+		update_all_last_withdraw(deps.storage, env.clone(), info.clone())?;
+	}
+
+	Ok(Response::new()
+		.add_messages(msgs)
+	)
+
 }
 
 pub fn update_last_withdraw(

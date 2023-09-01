@@ -21,6 +21,7 @@ pub struct ContractConfig {
 	pub vesting_token_balance: Uint128,
 	pub admin: Addr,
 	pub schedule_start: Timestamp,
+	pub force_withdraw_enabled: bool,
 }
 
 pub const SHAREHOLDERS: Map<&Addr, ShareholderInfo> = Map::new("shareholders");
