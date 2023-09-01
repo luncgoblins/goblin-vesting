@@ -137,8 +137,8 @@ pub fn execute_withdraw(
 	}
 
 	let addr = &info.sender;
-	let withdraw_amnt = calculate_withdraw_amnt(deps.as_ref(), env.clone(), info.clone(), &addr)?;
-	update_last_withdraw(deps.storage, env.clone(), info.clone(), &addr)?;
+	let withdraw_amnt = calculate_withdraw_amnt(deps.as_ref(), env.clone(), info.clone(), addr)?;
+	update_last_withdraw(deps.storage, env.clone(), info.clone(), addr)?;
 	
 	let send_request = get_withdraw_msg(
 		deps.as_ref(), env.clone(), info.clone(),
