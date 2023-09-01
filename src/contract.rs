@@ -2,7 +2,7 @@
 
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-	StdError,
+	StdError, Storage,
 	OverflowError, Uint64, Timestamp,
 	Addr, Binary, Deps, DepsMut, Env, MessageInfo,
 	Response, StdResult, QueryRequest, to_binary,
@@ -113,8 +113,6 @@ pub fn is_kickstarted(
 
 }
 
-
-
 pub fn execute_withdraw(
 	deps: DepsMut,
 	env: Env,
@@ -136,15 +134,11 @@ pub fn execute_withdraw(
 
 	let addr = &info.sender;
 	let curr_time = env.block.time;
-	let mut member_info = SHAREHOLDERS.load(deps.storage, &addr)?;
-	let withdraw_amnt = calculate_withdraw_amnt(&deps, env.clone(), info.clone(), &addr)?;
-	
-	// update state
-	member_info.last_withdraw_timestamp = curr_time;
-	SHAREHOLDERS.save(deps.storage, &addr, &member_info)?;
+	let withdraw_amnt = calculate_withdraw_amnt(deps.as_ref(), env.clone(), info.clone(), &addr)?;
+	update_last_withdraw(deps.storage, env.clone(), info.clone(), &addr)?;
 	
 	let send_request = get_withdraw_msg(
-		&deps, env.clone(), info.clone(),
+		deps.as_ref(), env.clone(), info.clone(),
 		withdraw_amnt,
 		&info.sender
 	)?;
@@ -179,8 +173,6 @@ pub fn execute_remove_member(
 	) {
 		return Err(ContractError::ExpiredContract{});
 	}
-
-	let curr_timestamp = env.block.time;
 	
 	// force withdraw for all members
 	// (but only if linear payout started)
@@ -190,21 +182,8 @@ pub fn execute_remove_member(
 		env.block.time,
 		Timestamp::from_seconds(config.vesting_period),
 	) {
-		msgs = SHAREHOLDERS
-			.range(deps.storage, None, None, Ascending)
-			.collect::<StdResult<Vec<_>>>()?
-			.iter()
-			.map(|item| -> Result<WasmMsg, ContractError>  {
-				let withdraw_amnt = calculate_withdraw_amnt(&deps, env.clone(), info.clone(), &item.0)?;
-				let message = get_withdraw_msg(&deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
-				SHAREHOLDERS.update(deps.storage, &item.0, |info: Option<ShareholderInfo>| -> Result<ShareholderInfo, ContractError> {
-					let mut ret = info.ok_or(ContractError::UnexpectedInput{})?;
-					ret.last_withdraw_timestamp = curr_timestamp;
-					Ok(ret)
-				})?;
-				Ok(message)
-			})
-			.collect::<Result<Vec<_>, ContractError>>()?;
+		msgs = get_all_withdraw_msgs(deps.as_ref(), env.clone(), info.clone())?;
+		update_all_last_withdraw(deps.storage, env.clone(), info.clone())?;
 	}
 
 	// remove member
@@ -212,7 +191,7 @@ pub fn execute_remove_member(
 	
 	// compensation message
 	let compensation_msg = get_withdraw_msg(
-		&deps, env.clone(), info.clone(),
+		deps.as_ref(), env.clone(), info.clone(),
 		Uint128::from(compensation), addr
 	)?;
 	
@@ -260,21 +239,8 @@ pub fn execute_add_member(
 		env.block.time,
 		Timestamp::from_seconds(config.vesting_period),
 	) {
-		msgs = SHAREHOLDERS
-			.range(deps.storage, None, None, Ascending)
-			.collect::<StdResult<Vec<_>>>()?
-			.iter()
-			.map(|item| -> Result<WasmMsg, ContractError>  {
-				let withdraw_amnt = calculate_withdraw_amnt(&deps, env.clone(), info.clone(), &item.0)?;
-				let message = get_withdraw_msg(&deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
-				SHAREHOLDERS.update(deps.storage, &item.0, |info: Option<ShareholderInfo>| -> Result<ShareholderInfo, ContractError> {
-					let mut ret = info.ok_or(ContractError::UnexpectedInput{})?;
-					ret.last_withdraw_timestamp = curr_timestamp;
-					Ok(ret)
-				})?;
-				Ok(message)
-			})
-			.collect::<Result<Vec<_>, ContractError>>()?;
+		msgs = get_all_withdraw_msgs(deps.as_ref(), env.clone(), info.clone())?;
+		update_all_last_withdraw(deps.storage, env.clone(), info.clone())?;
 	}
 	
 	// add new member
@@ -314,8 +280,41 @@ pub fn execute_kickoff(
 	
 }
 
+pub fn update_last_withdraw(
+	store: &mut dyn Storage,
+	env: Env,
+	info: MessageInfo,
+	addr: &Addr,
+) -> StdResult<ShareholderInfo> {
+
+	Ok(SHAREHOLDERS.update(store, addr, |item: Option<ShareholderInfo>| -> StdResult<ShareholderInfo>{
+		let mut i = item.ok_or(StdError::GenericErr{msg: String::from("unable")})?;
+		i.last_withdraw_timestamp = env.block.time;
+		Ok(i)
+	})?)
+
+}
+
+pub fn update_all_last_withdraw(
+	store: &mut dyn Storage,
+	env: Env,
+	info: MessageInfo
+) -> StdResult<Vec<ShareholderInfo>>{
+
+	Ok(SHAREHOLDERS
+		.range(store, None, None, Ascending)
+		.collect::<StdResult<Vec<_>>>()?
+		.iter()
+		.map(|pair| -> StdResult<ShareholderInfo> {
+			update_last_withdraw(store, env.clone(), info.clone(), &pair.0)
+		})
+		.collect::<StdResult<Vec<_>>>()?
+	)
+
+}
+
 pub fn calculate_weight_sum (
-	deps: &DepsMut
+	deps: Deps
 ) -> StdResult<Uint64>{
 	
 	Ok(
@@ -329,17 +328,17 @@ pub fn calculate_weight_sum (
 }
 
 pub fn calculate_withdraw_amnt(
-	deps: &DepsMut,
+	deps: Deps,
 	env: Env,
 	info: MessageInfo,
 	addr: &Addr,
-) -> Result<Uint128, ContractError> {
+) -> StdResult<Uint128> {
 	
 	let config = CONFIG.load(deps.storage)?;
 	let member_info = SHAREHOLDERS.load(deps.storage, &addr)?;
 	let weight_sum = calculate_weight_sum(deps)?;
 		
-	let balance = query_balance(&deps, env.clone(), info.clone())?;
+	let balance = query_balance(deps, env.clone(), info.clone())?;
 	let weight = (
 		Uint128::from(member_info.weight),
 		Uint128::from(weight_sum)
@@ -360,7 +359,7 @@ pub fn calculate_withdraw_amnt(
 }
 
 pub fn get_withdraw_msg(
-	deps: &DepsMut,
+	deps: Deps,
 	_env: Env,
 	_info: MessageInfo,
 	amnt: Uint128,
@@ -380,11 +379,38 @@ pub fn get_withdraw_msg(
 	Ok(wasm_msg)
 }
 
+pub fn get_all_withdraw_msgs(
+	deps: Deps,
+	env: Env,
+	info: MessageInfo,
+) -> StdResult<Vec<WasmMsg>>{
+
+	let curr_timestamp = env.block.time;
+	let msgs = SHAREHOLDERS
+		.range(deps.storage, None, None, Ascending)
+		.collect::<StdResult<Vec<_>>>()?
+		.iter()
+		.map(|item| -> StdResult<WasmMsg>  {
+			let withdraw_amnt = calculate_withdraw_amnt(deps, env.clone(), info.clone(), &item.0)?;
+			let message = get_withdraw_msg(deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
+			/*SHAREHOLDERS.update(deps.storage, &item.0, |info: Option<ShareholderInfo>| -> StdResult<ShareholderInfo> {
+				let mut ret = info.ok_or(StdError::GenericErr{msg:String::from("UnexpectedInput")})?;
+				ret.last_withdraw_timestamp = curr_timestamp;
+				Ok(ret)
+			})?;*/
+			Ok(message)
+		})
+		.collect::<StdResult<Vec<_>>>()?;
+
+	Ok(msgs)
+
+}
+
 pub fn query_balance(
-	deps: &DepsMut,
+	deps: Deps,
 	env: Env,
 	_info: MessageInfo,
-) -> Result<Uint128, ContractError> {
+) -> StdResult<Uint128> {
 	
 	let query_msg = Cw20QueryMsg::Balance {
 		address: env.contract.address.into_string(),
