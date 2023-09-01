@@ -3,7 +3,7 @@
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
 	StdError, Storage,
-	OverflowError, Uint64, Timestamp,
+	Uint64, Timestamp,
 	Addr, Binary, Deps, DepsMut, Env, MessageInfo,
 	Response, StdResult, QueryRequest, to_binary,
 	WasmQuery, Uint128, WasmMsg
@@ -137,7 +137,6 @@ pub fn execute_withdraw(
 	}
 
 	let addr = &info.sender;
-	let curr_time = env.block.time;
 	let withdraw_amnt = calculate_withdraw_amnt(deps.as_ref(), env.clone(), info.clone(), &addr)?;
 	update_last_withdraw(deps.storage, env.clone(), info.clone(), &addr)?;
 	
@@ -291,7 +290,7 @@ pub fn execute_force_withdraw(
 ) -> Result<Response, ContractError> {
 
 	// only admin can force withdraw
-	let mut config = CONFIG.load(deps.storage)?;
+	let config = CONFIG.load(deps.storage)?;
 	if config.admin != info.sender {
 		return Err(ContractError::Unauthorized{});
 	}
@@ -323,7 +322,7 @@ pub fn execute_force_withdraw(
 pub fn update_last_withdraw(
 	store: &mut dyn Storage,
 	env: Env,
-	info: MessageInfo,
+	_info: MessageInfo,
 	addr: &Addr,
 ) -> StdResult<ShareholderInfo> {
 
@@ -425,7 +424,6 @@ pub fn get_all_withdraw_msgs(
 	info: MessageInfo,
 ) -> StdResult<Vec<WasmMsg>>{
 
-	let curr_timestamp = env.block.time;
 	let msgs = SHAREHOLDERS
 		.range(deps.storage, None, None, Ascending)
 		.collect::<StdResult<Vec<_>>>()?
@@ -433,11 +431,6 @@ pub fn get_all_withdraw_msgs(
 		.map(|item| -> StdResult<WasmMsg>  {
 			let withdraw_amnt = calculate_withdraw_amnt(deps, env.clone(), info.clone(), &item.0)?;
 			let message = get_withdraw_msg(deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
-			/*SHAREHOLDERS.update(deps.storage, &item.0, |info: Option<ShareholderInfo>| -> StdResult<ShareholderInfo> {
-				let mut ret = info.ok_or(StdError::GenericErr{msg:String::from("UnexpectedInput")})?;
-				ret.last_withdraw_timestamp = curr_timestamp;
-				Ok(ret)
-			})?;*/
 			Ok(message)
 		})
 		.collect::<StdResult<Vec<_>>>()?;
