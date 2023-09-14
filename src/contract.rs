@@ -13,7 +13,7 @@ use cosmwasm_std::{
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
-use crate::query::{QueryMsg, QueryMembersResponse};
+use crate::query::{QueryMsg, QueryMembersResponse, QueryMemberResponse};
 use crate::state::{SHAREHOLDERS, CONFIG, ContractConfig, ShareholderInfo};
 use cw20::{BalanceResponse, Cw20QueryMsg, Cw20ExecuteMsg};
 use cosmwasm_std::Order::Ascending;
@@ -152,7 +152,7 @@ pub fn execute_withdraw(
 	}
 
 	let addr = &info.sender;
-	let withdraw_amnt = calculate_withdraw_amnt(deps.as_ref(), env.clone(), info.clone(), addr)?;
+	let withdraw_amnt = calculate_withdraw_amnt(deps.as_ref(), env.clone(), addr)?;
 	update_last_withdraw(deps.storage, env.clone(), info.clone(), addr)?;
 	
 	let send_request = get_withdraw_msg(
@@ -384,7 +384,6 @@ pub fn calculate_weight_sum (
 pub fn calculate_withdraw_amnt(
 	deps: Deps,
 	env: Env,
-	info: MessageInfo,
 	addr: &Addr,
 ) -> StdResult<Uint128> {
 	
@@ -392,7 +391,7 @@ pub fn calculate_withdraw_amnt(
 	let member_info = SHAREHOLDERS.load(deps.storage, &addr)?;
 	let weight_sum = calculate_weight_sum(deps)?;
 		
-	let balance = query_balance(deps, env.clone(), info.clone())?;
+	let balance = query_balance(deps, env.clone())?;
 	let weight = (
 		Uint128::from(member_info.weight),
 		Uint128::from(weight_sum)
@@ -444,7 +443,7 @@ pub fn get_all_withdraw_msgs(
 		.collect::<StdResult<Vec<_>>>()?
 		.iter()
 		.map(|item| -> StdResult<WasmMsg>  {
-			let withdraw_amnt = calculate_withdraw_amnt(deps, env.clone(), info.clone(), &item.0)?;
+			let withdraw_amnt = calculate_withdraw_amnt(deps, env.clone(), &item.0)?;
 			let message = get_withdraw_msg(deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
 			Ok(message)
 		})
@@ -457,7 +456,6 @@ pub fn get_all_withdraw_msgs(
 pub fn query_balance(
 	deps: Deps,
 	env: Env,
-	_info: MessageInfo,
 ) -> StdResult<Uint128> {
 	
 	let query_msg = Cw20QueryMsg::Balance {
@@ -487,6 +485,9 @@ pub fn query(
 		},
 		QueryMsg::Members {} => {
 			Ok(to_binary(&query_members(deps, env)?)?)
+		},
+		QueryMsg::Member { addr } => {
+			Ok(to_binary(&query_member(deps, env, addr)?)?)
 		}
 	}
     
@@ -515,6 +516,25 @@ pub fn query_members(
 		members: addresses
 	};
 	Ok(resp)
+
+}
+
+pub fn query_member(
+	deps: Deps,
+	env: Env,
+	addr: Addr,
+) -> StdResult<QueryMemberResponse> {
+
+	let denominator = calculate_weight_sum(deps)?.u64();
+	let nominator = SHAREHOLDERS.load(deps.storage, &addr)?.weight;
+	let can_withdraw: Uint128 = calculate_withdraw_amnt(deps, env, &addr)?;
+	let ret = QueryMemberResponse{
+		addr: addr,
+		weight_denominator: denominator,
+		weight_nominator: nominator,
+		can_withdraw: can_withdraw,
+	};
+	Ok(ret)
 
 }
 
