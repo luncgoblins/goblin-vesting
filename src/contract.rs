@@ -115,12 +115,13 @@ pub fn is_expired(
 pub fn is_inactive(
 	start_timestamp: Timestamp,
 	current_timestamp: Timestamp,
-	duration: Timestamp,
 ) -> bool {
 
-	let a = !is_kickstarted(start_timestamp);
-	let b = is_kickstarted(start_timestamp) && current_timestamp < start_timestamp.plus_seconds(duration.seconds());
-	a || b
+	if !is_kickstarted(start_timestamp) {
+		return true;
+	}
+
+	current_timestamp < start_timestamp
 
 }
 
@@ -146,7 +147,6 @@ pub fn execute_withdraw(
 	if is_inactive(
 		config.schedule_start,
 		env.block.time,
-		Timestamp::from_seconds(config.vesting_period),
 	) {
 		return Err(ContractError::InactiveContract{});
 	}
@@ -198,7 +198,6 @@ pub fn execute_remove_member(
 	if !is_inactive(
 		config.schedule_start,
 		env.block.time,
-		Timestamp::from_seconds(config.vesting_period),
 	) {
 		msgs = get_all_withdraw_msgs(deps.as_ref(), env.clone(), info.clone())?;
 		update_all_last_withdraw(deps.storage, env.clone(), info.clone())?;
@@ -255,7 +254,6 @@ pub fn execute_add_member(
 	if !is_inactive(
 		config.schedule_start,
 		env.block.time,
-		Timestamp::from_seconds(config.vesting_period),
 	) {
 		msgs = get_all_withdraw_msgs(deps.as_ref(), env.clone(), info.clone())?;
 		update_all_last_withdraw(deps.storage, env.clone(), info.clone())?;
@@ -322,7 +320,6 @@ pub fn execute_force_withdraw(
 	if !is_inactive(
 		config.schedule_start,
 		env.block.time,
-		Timestamp::from_seconds(config.vesting_period),
 	) {
 		msgs = get_all_withdraw_msgs(deps.as_ref(), env.clone(), info.clone())?;
 		update_all_last_withdraw(deps.storage, env.clone(), info.clone())?;
@@ -390,7 +387,14 @@ pub fn calculate_withdraw_amnt(
 	let config = CONFIG.load(deps.storage)?;
 	let member_info = SHAREHOLDERS.load(deps.storage, &addr)?;
 	let weight_sum = calculate_weight_sum(deps)?;
-		
+
+	if is_inactive(
+		config.schedule_start,
+		env.block.time
+	) {
+		return Ok(Uint128::from(0u32));
+	}
+
 	let balance = query_balance(deps, env.clone())?;
 	let weight = (
 		Uint128::from(member_info.weight),
