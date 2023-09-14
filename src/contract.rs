@@ -2,6 +2,7 @@
 
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
+	Order, Empty,
 	StdError, Storage,
 	Uint64, Timestamp,
 	Addr, Binary, Deps, DepsMut, Env, MessageInfo,
@@ -12,7 +13,7 @@ use cosmwasm_std::{
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
-use crate::query::{QueryMsg};
+use crate::query::{QueryMsg, QueryMembersResponse};
 use crate::state::{SHAREHOLDERS, CONFIG, ContractConfig, ShareholderInfo};
 use cw20::{BalanceResponse, Cw20QueryMsg, Cw20ExecuteMsg};
 use cosmwasm_std::Order::Ascending;
@@ -22,6 +23,17 @@ use cosmwasm_std::Order::Ascending;
 const CONTRACT_NAME: &str = "crates.io:goblin-vesting";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 */
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(
+	mut _deps: DepsMut,
+	_env: Env,
+	_msg: Empty,
+) -> Result<Response, ContractError> {
+
+	Ok(Response::new())
+
+}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -92,8 +104,11 @@ pub fn is_expired(
 	current_timestamp: Timestamp,
 	duration: Timestamp,
 ) -> bool {
-
-	current_timestamp > start_timestamp.plus_seconds(duration.seconds())
+	
+	if is_kickstarted(start_timestamp) {
+		return current_timestamp > start_timestamp.plus_seconds(duration.seconds())
+	}
+	return false;
 
 }
 
@@ -165,7 +180,7 @@ pub fn execute_remove_member(
 	}
 
 	// removed member must be current board member
-	if !SHAREHOLDERS.has(deps.storage, &info.sender) {
+	if !SHAREHOLDERS.has(deps.storage, addr) {
 		return Err(ContractError::UnexpectedInput{});
 	}
 	
@@ -220,7 +235,7 @@ pub fn execute_add_member(
 	}
 	
 	// new member not in list of current members
-	if SHAREHOLDERS.has(deps.storage, &info.sender) {
+	if SHAREHOLDERS.has(deps.storage, addr) {
 		return Err(ContractError::UnexpectedInput{});
 	}
 	
@@ -470,6 +485,9 @@ pub fn query(
 		QueryMsg::Config {} => {
 			Ok(to_binary(&query_config(deps, env)?)?)
 		},
+		QueryMsg::Members {} => {
+			Ok(to_binary(&query_members(deps, env)?)?)
+		}
 	}
     
 }
@@ -480,6 +498,23 @@ pub fn query_config(
 ) -> StdResult<ContractConfig> {
 
 	Ok(CONFIG.load(deps.storage)?)
+
+}
+
+pub fn query_members(
+	deps: Deps,
+	_env: Env,
+) -> StdResult<QueryMembersResponse> {
+
+	let addresses = SHAREHOLDERS
+		.keys(deps.storage, None, None, Order::Ascending)
+		.into_iter()
+		.map(|item| item.unwrap())
+		.collect::<Vec<_>>();
+	let resp = QueryMembersResponse {
+		members: addresses
+	};
+	Ok(resp)
 
 }
 
