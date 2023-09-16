@@ -48,7 +48,6 @@ pub fn instantiate(
 		vesting_token_addr: deps.api.addr_validate(
 			&msg.token
 		)?,
-		vesting_token_balance: Uint128::from(0u64),
 		admin: deps.api.addr_validate(
 			&msg.admin
 		)?,
