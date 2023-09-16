@@ -152,7 +152,7 @@ pub fn execute_withdraw(
 
 	let addr = &info.sender;
 	let withdraw_amnt = calculate_withdraw_amnt(deps.as_ref(), env.clone(), addr)?;
-	update_last_withdraw(deps.storage, env.clone(), info.clone(), addr)?;
+	update_last_withdraw_to(deps.storage, env.clone(), addr, env.block.time)?;
 	
 	let send_request = get_withdraw_msg(
 		deps.as_ref(), env.clone(), info.clone(),
@@ -199,7 +199,7 @@ pub fn execute_remove_member(
 		env.block.time,
 	) {
 		msgs = get_all_withdraw_msgs(deps.as_ref(), env.clone(), info.clone())?;
-		update_all_last_withdraw(deps.storage, env.clone(), info.clone())?;
+		update_all_last_withdraw_to(deps.storage, env.clone(), env.block.time)?;
 	}
 
 	// remove member
@@ -255,7 +255,7 @@ pub fn execute_add_member(
 		env.block.time,
 	) {
 		msgs = get_all_withdraw_msgs(deps.as_ref(), env.clone(), info.clone())?;
-		update_all_last_withdraw(deps.storage, env.clone(), info.clone())?;
+		update_all_last_withdraw_to(deps.storage, env.clone(), env.block.time)?;
 	}
 	
 	// add new member
@@ -273,7 +273,7 @@ pub fn execute_add_member(
 
 pub fn execute_kickoff(
 	deps: DepsMut,
-	_env: Env,
+	env: Env,
 	info: MessageInfo,
 	date: Timestamp,
 ) -> Result<Response, ContractError> {
@@ -287,6 +287,8 @@ pub fn execute_kickoff(
 	if is_kickstarted(config.schedule_start.clone()) {
 		return Err(ContractError::ActiveContract{});
 	}
+
+	update_all_last_withdraw_to(deps.storage, env, date)?;
 	
 	config.schedule_start = date;
 	CONFIG.save(deps.storage, &config)?;
@@ -321,7 +323,7 @@ pub fn execute_force_withdraw(
 		env.block.time,
 	) {
 		msgs = get_all_withdraw_msgs(deps.as_ref(), env.clone(), info.clone())?;
-		update_all_last_withdraw(deps.storage, env.clone(), info.clone())?;
+		update_all_last_withdraw_to(deps.storage, env.clone(), env.block.time)?;
 	}
 
 	Ok(Response::new()
@@ -330,25 +332,25 @@ pub fn execute_force_withdraw(
 
 }
 
-pub fn update_last_withdraw(
+pub fn update_last_withdraw_to(
 	store: &mut dyn Storage,
 	env: Env,
-	_info: MessageInfo,
 	addr: &Addr,
+	to: Timestamp
 ) -> StdResult<ShareholderInfo> {
 
 	Ok(SHAREHOLDERS.update(store, addr, |item: Option<ShareholderInfo>| -> StdResult<ShareholderInfo>{
 		let mut i = item.ok_or(StdError::GenericErr{msg: String::from("unable")})?;
-		i.last_withdraw_timestamp = env.block.time;
+		i.last_withdraw_timestamp = to;
 		Ok(i)
 	})?)
 
 }
 
-pub fn update_all_last_withdraw(
+pub fn update_all_last_withdraw_to(
 	store: &mut dyn Storage,
 	env: Env,
-	info: MessageInfo
+	to: Timestamp
 ) -> StdResult<Vec<ShareholderInfo>>{
 
 	Ok(SHAREHOLDERS
@@ -356,7 +358,7 @@ pub fn update_all_last_withdraw(
 		.collect::<StdResult<Vec<_>>>()?
 		.iter()
 		.map(|pair| -> StdResult<ShareholderInfo> {
-			update_last_withdraw(store, env.clone(), info.clone(), &pair.0)
+			update_last_withdraw_to(store, env.clone(), &pair.0, to)
 		})
 		.collect::<StdResult<Vec<_>>>()?
 	)
