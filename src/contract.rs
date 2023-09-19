@@ -45,6 +45,7 @@ pub fn instantiate(
 
     let config = ContractConfig{
 		vesting_period: msg.vesting_period,
+		vesting_amount: msg.vesting_amount,
 		vesting_token_addr: deps.api.addr_validate(
 			&msg.token
 		)?,
@@ -284,10 +285,18 @@ pub fn execute_kickoff(
 		return Err(ContractError::Unauthorized{});
 	}
 	
+	// no double kickoff
 	if is_kickstarted(config.schedule_start.clone()) {
 		return Err(ContractError::ActiveContract{});
 	}
 
+	// only kick-off if balance is ok
+	let actual_balance = query_balance(deps.as_ref(), env.clone())?;
+	let supposed_balance = Uint128::from(config.vesting_amount);
+	if (actual_balance.lt(&supposed_balance)){
+		return Err(ContractError::UnexpectedInput{});
+	}
+	
 	update_all_last_withdraw_to(deps.storage, env, date)?;
 	
 	config.schedule_start = date;
@@ -381,39 +390,42 @@ pub fn calculate_weight_sum (
 
 pub fn calculate_withdraw_amnt(
 	deps: Deps,
-	env: Env,
-	addr: &Addr,
+    env: Env,
+    addr: &Addr,
 ) -> StdResult<Uint128> {
-	
+
 	let config = CONFIG.load(deps.storage)?;
-	let member_info = SHAREHOLDERS.load(deps.storage, &addr)?;
-	let weight_sum = calculate_weight_sum(deps)?;
+   	let member_info = SHAREHOLDERS.load(deps.storage, &addr)?;
+    let weight_sum = calculate_weight_sum(deps)?;
 
 	if is_inactive(
 		config.schedule_start,
 		env.block.time
-	) {
+    ) {
 		return Ok(Uint128::from(0u32));
 	}
 
 	let balance = query_balance(deps, env.clone())?;
 	let weight = (
-		Uint128::from(member_info.weight),
-		Uint128::from(weight_sum)
+	    Uint128::from(member_info.weight),
+	    Uint128::from(weight_sum)
 	);
+
 	let time_diff = Uint128::from(
-		env.block.time
-		.minus_seconds(member_info.last_withdraw_timestamp.seconds()).seconds()
+	    env.block.time
+	    .minus_seconds(member_info.last_withdraw_timestamp.seconds()).seconds()
 	);
+
 	let time_weight = (
-		time_diff,
-		Uint128::from(config.vesting_period),
+	    time_diff,
+	    Uint128::from(config.vesting_period),
 	);
+
 	Ok(balance
-		.checked_mul_floor(time_weight).unwrap_or(Uint128::from(0u64))
-		.checked_mul_floor(weight).unwrap_or(Uint128::from(0u64))
+	    .checked_mul_floor(time_weight).unwrap_or(Uint128::from(0u64))
+	    .checked_mul_floor(weight).unwrap_or(Uint128::from(0u64))
 	)
-	
+
 }
 
 pub fn get_withdraw_msg(
@@ -457,6 +469,8 @@ pub fn get_all_withdraw_msgs(
 	Ok(msgs)
 
 }
+
+
 
 pub fn query_balance(
 	deps: Deps,
@@ -530,8 +544,9 @@ pub fn query_member(
 	addr: Addr,
 ) -> StdResult<QueryMemberResponse> {
 
+	let member = SHAREHOLDERS.load(deps.storage, &addr)?;
 	let denominator = calculate_weight_sum(deps)?.u64();
-	let nominator = SHAREHOLDERS.load(deps.storage, &addr)?.weight;
+	let nominator = member.weight;
 	let can_withdraw: Uint128 = calculate_withdraw_amnt(deps, env, &addr)?;
 	let ret = QueryMemberResponse{
 		addr: addr,

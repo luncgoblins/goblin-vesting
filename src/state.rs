@@ -16,6 +16,7 @@ pub struct ShareholderInfo {
 pub struct ContractConfig {
 	// total length of vesting span in seconds
 	pub vesting_period: u64,
+	pub vesting_amount: u64,
 	// token address
 	pub vesting_token_addr: Addr,
 	pub admin: Addr,
