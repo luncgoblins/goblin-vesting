@@ -1,6 +1,6 @@
+use crate::state::ContractConfig;
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Uint128};
-use crate::state::{ContractConfig};
 
 #[cw_serde]
 #[derive(QueryResponses)]

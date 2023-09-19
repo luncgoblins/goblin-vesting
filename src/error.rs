@@ -8,20 +8,19 @@ pub enum ContractError {
 
     #[error("Unauthorized")]
     Unauthorized {},
-    
+
     #[error("InitializeFailed")]
     InitializeError {},
-    
+
     #[error("UnexpectedInput")]
     UnexpectedInput {},
-    
-    #[error("ExpiredContract")]
-    ExpiredContract{},
-    
-    #[error("InactiveContract")]
-    InactiveContract{},
-    
-    #[error("ActiveContract")]
-    ActiveContract{},
 
+    #[error("ExpiredContract")]
+    ExpiredContract {},
+
+    #[error("InactiveContract")]
+    InactiveContract {},
+
+    #[error("ActiveContract")]
+    ActiveContract {},
 }
