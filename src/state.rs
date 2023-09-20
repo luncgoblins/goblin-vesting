@@ -1,3 +1,4 @@
+use crate::msg::AssetInfo;
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Timestamp};
 use cw_storage_plus::{Item, Map};
@@ -18,7 +19,7 @@ pub struct ContractConfig {
     pub vesting_period: u64,
     pub vesting_amount: u64,
     // token address
-    pub vesting_token_addr: Addr,
+    pub vesting_token: AssetInfo,
     pub admin: Addr,
     pub schedule_start: Timestamp,
     pub force_withdraw_enabled: bool,

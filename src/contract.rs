@@ -1,13 +1,13 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_binary, Addr, Binary, Deps, DepsMut, Empty, Env, MessageInfo, Order, QueryRequest, Response,
-    StdError, StdResult, Storage, Timestamp, Uint128, Uint64, WasmMsg, WasmQuery,
+    to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Empty, Env, MessageInfo,
+    Order, QueryRequest, Response, StdError, StdResult, Storage, Timestamp, Uint128, Uint64,
+    WasmMsg, WasmQuery,
 };
-// use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg};
+use crate::msg::{AssetInfo, ExecuteMsg, InstantiateMsg};
 use crate::query::{QueryMemberResponse, QueryMembersResponse, QueryMsg};
 use crate::state::{ContractConfig, ShareholderInfo, CONFIG, SHAREHOLDERS};
 use cosmwasm_std::Order::Ascending;
@@ -34,7 +34,7 @@ pub fn instantiate(
     let config = ContractConfig {
         vesting_period: msg.vesting_period,
         vesting_amount: msg.vesting_amount,
-        vesting_token_addr: deps.api.addr_validate(&msg.token)?,
+        vesting_token: msg.token,
         admin: deps.api.addr_validate(&msg.admin)?,
         schedule_start: Timestamp::from_seconds(0u64),
         force_withdraw_enabled: msg.force_withdraw_enabled.unwrap_or(false),
@@ -363,6 +363,27 @@ pub fn get_withdraw_msg(
     _info: MessageInfo,
     amnt: Uint128,
     dst: &Addr,
+) -> StdResult<CosmosMsg> {
+    let config = CONFIG.load(deps.storage)?;
+    let dest_string = String::from(dst);
+    match config.vesting_token {
+        AssetInfo::Cw20Info { address } => Ok(CosmosMsg::from(get_withdraw_msg_cw20(
+            deps, amnt, address, dst,
+        )?)),
+        AssetInfo::NativeInfo { denom } => Ok(CosmosMsg::from(get_withdraw_msg_native(
+            deps,
+            amnt,
+            denom,
+            dest_string,
+        )?)),
+    }
+}
+
+pub fn get_withdraw_msg_cw20(
+    deps: Deps,
+    amnt: Uint128,
+    contract: String,
+    dst: &Addr,
 ) -> StdResult<WasmMsg> {
     let config = CONFIG.load(deps.storage)?;
     let send_msg = Cw20ExecuteMsg::Transfer {
@@ -370,19 +391,36 @@ pub fn get_withdraw_msg(
         amount: amnt,
     };
     let wasm_msg = WasmMsg::Execute {
-        contract_addr: config.vesting_token_addr.into_string(),
+        contract_addr: contract,
         msg: to_binary(&send_msg)?,
         funds: vec![],
     };
     Ok(wasm_msg)
 }
 
-pub fn get_all_withdraw_msgs(deps: Deps, env: Env, info: MessageInfo) -> StdResult<Vec<WasmMsg>> {
+pub fn get_withdraw_msg_native(
+    deps: Deps,
+    amnt: Uint128,
+    denom: String,
+    dst: String,
+) -> StdResult<BankMsg> {
+    let coin = Coin {
+        denom: denom,
+        amount: amnt,
+    };
+    let msg = BankMsg::Send {
+        to_address: dst,
+        amount: vec![coin],
+    };
+    Ok(msg)
+}
+
+pub fn get_all_withdraw_msgs(deps: Deps, env: Env, info: MessageInfo) -> StdResult<Vec<CosmosMsg>> {
     let msgs = SHAREHOLDERS
         .range(deps.storage, None, None, Ascending)
         .collect::<StdResult<Vec<_>>>()?
         .iter()
-        .map(|item| -> StdResult<WasmMsg> {
+        .map(|item| -> StdResult<CosmosMsg> {
             let withdraw_amnt = calculate_withdraw_amnt(deps, env.clone(), &item.0)?;
             let message =
                 get_withdraw_msg(deps, env.clone(), info.clone(), withdraw_amnt, &item.0)?;
@@ -394,18 +432,33 @@ pub fn get_all_withdraw_msgs(deps: Deps, env: Env, info: MessageInfo) -> StdResu
 }
 
 pub fn query_balance(deps: Deps, env: Env) -> StdResult<Uint128> {
+    let asset_info = CONFIG.load(deps.storage)?;
+    match asset_info.vesting_token {
+        AssetInfo::Cw20Info { address } => query_cw20_balance(deps, env, address),
+        AssetInfo::NativeInfo { denom } => query_native_balance(deps, env, denom),
+    }
+}
+
+pub fn query_cw20_balance(deps: Deps, env: Env, token: String) -> StdResult<Uint128> {
     let query_msg = Cw20QueryMsg::Balance {
         address: env.contract.address.into_string(),
     };
     let config = CONFIG.load(deps.storage)?;
     let request = QueryRequest::Wasm({
         WasmQuery::Smart {
-            contract_addr: config.vesting_token_addr.into_string(),
+            contract_addr: token,
             msg: to_binary(&query_msg)?,
         }
     });
     let response: BalanceResponse = deps.querier.query(&request)?;
     Ok(response.balance)
+}
+
+pub fn query_native_balance(deps: Deps, env: Env, denom: String) -> StdResult<Uint128> {
+    let coin = deps
+        .querier
+        .query_balance(env.contract.address.into_string(), denom)?;
+    Ok(coin.amount)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
